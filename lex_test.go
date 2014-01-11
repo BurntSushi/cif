@@ -2,8 +2,7 @@ package cif
 
 import "testing"
 
-func TestLexer(t *testing.T) {
-	test := `#\#CIF_1.1
+var cifSmall = `#\#CIF_1.1
 data_1CTF
 _entry.id 1ctf
 _entry.name 'andrew's pet'
@@ -15,9 +14,14 @@ data_abcd
 save_wat
 _entry.id .
 _entry.name .
-save_
-`
-	lx := lex(test)
+save_`
+
+func TestLexer(t *testing.T) {
+	if !flagDev {
+		return
+	}
+
+	lx := lex(cifSmall)
 	for {
 		item := lx.nextItem()
 		if item.typ == itemEOF {

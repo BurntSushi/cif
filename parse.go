@@ -8,34 +8,11 @@ import (
 	"strings"
 )
 
-type CIF struct {
-	Version string
-	blocks  map[string]dataBlock
-	lx      *lexer
-	line    int
+type parser struct {
+	*CIF
+	lx   *lexer
+	line int
 }
-
-type block struct {
-	Name  string
-	Items map[string]Value
-	Loops map[string]loop
-}
-
-type dataBlock struct {
-	block
-	Frames map[string]saveFrame
-}
-
-type saveFrame struct {
-	block
-}
-
-type loop struct {
-	Columns map[string]int
-	Values  [][]Value
-}
-
-type Value interface{}
 
 type cifError string
 
@@ -43,34 +20,39 @@ func (ce cifError) Error() string {
 	return string(ce)
 }
 
-func ReadCIF(r io.Reader) (*CIF, error) {
+// Read reads CIF formatted input and returns a CIF value if and only if the
+// input conforms to the CIF 1.1 specification.
+func Read(r io.Reader) (*CIF, error) {
 	cif := &CIF{
 		Version: "",
-		blocks:  make(map[string]dataBlock, 10),
+		Blocks:  make(map[string]*DataBlock, 10),
 	}
 	input, err := ioutil.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}
-	return cif.parse(string(input))
+	return (&parser{CIF: cif}).parse(string(input))
 }
 
-func (cif *CIF) errf(format string, v ...interface{}) {
+func (p *parser) errf(format string, v ...interface{}) {
 	err := fmt.Sprintf(format, v...)
-	panic(cifError(fmt.Sprintf("CIF parse error (line %d): %s", cif.line, err)))
+	panic(cifError(fmt.Sprintf("CIF parse error (line %d): %s", p.line, err)))
 }
 
-func (cif *CIF) next() item {
-	t := cif.lx.nextItem()
-	// pf("%s :: %s (%d)\n", t.typ, t.val, t.line) 
+func (p *parser) next() item {
+	t := p.lx.nextItem()
+	// pf("%s :: %s (%d)\n", t.typ, t.val, t.line)
 	if t.typ == itemComment {
-		return cif.next()
+		return p.next()
 	}
-	cif.line = t.line
+	if t.typ == itemError {
+		p.errf("%s", t.val)
+	}
+	p.line = t.line
 	return t
 }
 
-func (cif *CIF) parse(input string) (_ *CIF, err error) {
+func (p *parser) parse(input string) (_ *CIF, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			if e, ok := r.(cifError); ok {
@@ -79,162 +61,123 @@ func (cif *CIF) parse(input string) (_ *CIF, err error) {
 			}
 		}
 	}()
-	cif.lx = lex(input)
-	for t := cif.next(); ; {
+	p.lx = lex(input)
+	for t := p.next(); ; {
 		switch t.typ {
 		case itemEOF:
-			return cif, nil
+			return p.CIF, nil
 		case itemDataBlockStart:
-			t = cif.parseDataBlock(strings.ToLower(t.val))
+			t = p.parseDataBlock(strings.ToLower(t.val))
+		case itemVersion:
+			p.Version = t.val[3:]
+			t = p.next()
 		default:
-			cif.errf("Expected comments, whitespace or a data block heading, "+
+			p.errf("Expected comments, whitespace or a data block heading, "+
 				"but got a '%s' instead.", t.typ)
 		}
 	}
 	panic("unreachable")
 }
 
-func (cif *CIF) parseDataBlock(name string) item {
-	if _, ok := cif.blocks[name]; ok {
-		cif.errf("Data block with name '%s' already exists.", name)
+func (p *parser) parseDataBlock(name string) item {
+	if _, ok := p.Blocks[name]; ok {
+		p.errf("Data block with name '%s' already exists.", name)
 	}
-	dblock := dataBlock{
-		block: block{
+	dblock := &DataBlock{
+		Block: Block{
 			Name:  name,
 			Items: make(map[string]Value, 10),
-			Loops: make(map[string]loop, 5),
+			Loops: make(map[string]*Loop, 5),
 		},
-		Frames: make(map[string]saveFrame, 0), // only used for dictionaries
+		Frames: make(map[string]*SaveFrame, 0), // only used for dictionaries
 	}
-	cif.blocks[name] = dblock
-	for t := cif.next(); ; {
+	p.Blocks[name] = dblock
+	for t := p.next(); ; {
 		switch t.typ {
 		case itemEOF, itemDataBlockStart:
 			return t
 		case itemSaveFrameStart:
-			cif.parseSaveFrame(dblock, strings.ToLower(t.val))
-			t = cif.next()
+			p.parseSaveFrame(dblock, strings.ToLower(t.val))
+			t = p.next()
 		case itemLoop:
-			t = cif.parseLoop(dblock.block)
+			t = p.parseLoop(dblock.Block)
 		case itemDataTag:
-			cif.parseItemValue(dblock.block, strings.ToLower(t.val))
-			t = cif.next()
+			p.parseItemValue(dblock.Block, strings.ToLower(t.val))
+			t = p.next()
 		default:
-			cif.errf("Expected comments, whitespace or a data block heading, "+
+			p.errf("Expected comments, whitespace or a data block heading, "+
 				"but got a '%s' instead.", t.typ)
 		}
 	}
 	panic("unreachable")
 }
 
-func (cif *CIF) parseSaveFrame(dblock dataBlock, name string) {
+func (p *parser) parseSaveFrame(dblock *DataBlock, name string) {
 	if _, ok := dblock.Frames[name]; ok {
-		cif.errf("Save frame with name '%s' already exists in data block '%s'.",
+		p.errf("Save frame with name '%s' already exists in data block '%s'.",
 			name, dblock.Name)
 	}
-	frame := saveFrame{
-		block: block{
+	frame := &SaveFrame{
+		Block: Block{
 			Name:  name,
 			Items: make(map[string]Value, 10),
-			Loops: make(map[string]loop, 5),
+			Loops: make(map[string]*Loop, 5),
 		},
 	}
 	dblock.Frames[name] = frame
-	for t := cif.next(); ; {
+	for t := p.next(); ; {
 		switch t.typ {
 		case itemSaveFrameEnd:
 			return
 		case itemLoop:
-			t = cif.parseLoop(frame.block)
+			t = p.parseLoop(frame.Block)
 		case itemDataTag:
-			cif.parseItemValue(frame.block, strings.ToLower(t.val))
-			t = cif.next()
+			p.parseItemValue(frame.Block, strings.ToLower(t.val))
+			t = p.next()
 		default:
-			cif.errf("Expected a data item or end of save frame delimiter, "+
+			p.errf("Expected a data item or end of save frame delimiter, "+
 				"but got a '%s' instead.", t.typ)
 		}
 	}
 }
 
-func (cif *CIF) parseLoop(b block) item {
-	loopLine := cif.line
-	t := cif.next()
-	if t.typ != itemDataTag {
-		cif.errf("After 'loop_' declaration, there must be at least one "+
-			"data tag, but found '%s' instead.", t.typ)
-	}
-	loop := loop{
-		Columns: make(map[string]int, 5),
-		Values:  nil,
-	}
-	var columns []string
-	for i := 0; t.typ == itemDataTag; t, i = cif.next(), i+1 {
-		name := strings.ToLower(t.val)
-		cif.assertUniqueTag(b, name)
-		loop.Columns[name] = i
-		columns = append(columns, name)
-	}
-
-	loop.Values = make([][]Value, len(loop.Columns))
-	if !isValueType(t.typ) {
-		cif.errf("After 'loop_' declaration, there must be at least one "+
-			"data tag and at least one value, but found '%s' instead of a "+
-			"value.", t.typ)
-	}
-	count := 0 // must end up being a multiple of len(loop.Columns)
-	for i := 0; isValueType(t.typ); t, i, count = cif.next(), i+1, count+1 {
-		column := i % len(loop.Columns)
-		v := cif.parseValue(t, b.Name, columns[column])
-		loop.Values[column] = append(loop.Values[column], v)
-	}
-	if count % len(loop.Columns) != 0 {
-		cif.errf("There are %d values in loop (starting on line %d), which is "+
-			"not a multiple of the number of columns in the loop (%d).",
-			count, loopLine, len(loop.Columns))
-	}
-	for tag := range loop.Columns {
-		b.Loops[tag] = loop
-	}
-	return t
+func (p *parser) parseItemValue(b Block, name string) {
+	p.assertUniqueTag(b, name)
+	b.Items[name] = p.parseValue(p.next(), b.Name, name)
 }
 
-func (cif *CIF) parseItemValue(b block, name string) {
-	cif.assertUniqueTag(b, name)
-	b.Items[name] = cif.parseValue(cif.next(), b.Name, name)
-}
-
-func (cif *CIF) parseValue(t item, bname, name string) Value {
+func (p *parser) parseValue(t item, bname, name string) Value {
 	switch t.typ {
 	case itemDataOmitted:
-		return "."
+		return AsValue(".")
 	case itemDataMissing:
-		return "?"
+		return AsValue("?")
 	case itemDataInteger:
 		n, err := strconv.Atoi(t.val)
 		if err != nil {
-			cif.errf("Could not parse '%s' as integer: %s", t.val, err)
+			p.errf("Could not parse '%s' as integer: %s", t.val, err)
 		}
-		return n
+		return AsValue(n)
 	case itemDataFloat:
 		f, err := strconv.ParseFloat(t.val, 64)
 		if err != nil {
-			cif.errf("Could not parse '%s' as float: %s", t.val, err)
+			p.errf("Could not parse '%s' as float: %s", t.val, err)
 		}
-		return f
+		return AsValue(f)
 	case itemDataString:
-		return t.val
+		return AsValue(t.val)
 	default:
-		cif.errf("Expected value for data tag '%s' in block '%s', but got a "+
+		p.errf("Expected value for data tag '%s' in block '%s', but got a "+
 			"'%s' instead.", name, bname, t.typ)
 	}
 	panic("unreachable")
 }
 
-func (cif *CIF) assertUniqueTag(b block, name string) {
+func (p *parser) assertUniqueTag(b Block, name string) {
 	_, iok := b.Items[name]
 	_, lok := b.Loops[name]
 	if iok || lok {
-		cif.errf("Data item with name '%s' already exists in block '%s'.",
+		p.errf("Data item with name '%s' already exists in block '%s'.",
 			name, b.Name)
 	}
 }
@@ -242,4 +185,12 @@ func (cif *CIF) assertUniqueTag(b block, name string) {
 func isValueType(t itemType) bool {
 	return t == itemDataOmitted || t == itemDataMissing ||
 		t == itemDataInteger || t == itemDataFloat || t == itemDataString
+}
+
+func isInteger(t itemType) bool {
+	return t == itemDataInteger
+}
+
+func isFloat(t itemType) bool {
+	return t == itemDataFloat
 }

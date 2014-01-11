@@ -21,6 +21,7 @@ const (
 	itemDataInteger
 	itemDataFloat
 	itemDataString
+	itemDataNone // used in parser to indicate no type
 )
 
 const (
