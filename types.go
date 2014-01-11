@@ -14,8 +14,25 @@ type CIF struct {
 // Block represents the structure of any block-like section in a CIF file.
 // It corresponds either to a data block or a save frame.
 type Block struct {
+	// The name of this block.
 	Name  string
+
+	// Items maps data tags to values. Data tags that are part of a "loop_"
+	// declaration are not included here.
 	Items map[string]Value
+
+	// Loops maps data tags to tables defined by a "loop_" declaration. Namely,
+	// each data tag in a "loop_" maps to precisely the same loop object.
+	// For example, if a "loop_" introduces the data tag "_cats" with values
+	// "Cauchy" and "Plato", then the following code accesses that list of
+	// cats:
+	//
+	//	loop := someBlock.Loops["cats"]
+	//	cats := loop.Get("cats").Strings()
+	//
+	// Notice that the key "cats" is used twice. The first time it's used to
+	// get the loop object, while the second time its used is to get the
+	// actual column of data.
 	Loops map[string]*Loop
 }
 
