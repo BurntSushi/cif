@@ -10,12 +10,12 @@ var (
 type stateFn func(lx *lexer) stateFn
 
 type lexer struct {
-	input string
-	start int
-	pos   int
-	width int
-	line  int
-	state stateFn
+	input   string
+	start   int
+	pos     int
+	width   int
+	line    int
+	state   stateFn
 	emitted *item
 
 	// A stack of state functions used to maintain context.
@@ -33,11 +33,11 @@ type item struct {
 
 func lex(input string) *lexer {
 	lx := &lexer{
-		input: input,
-		state: lexCifInitial,
-		line:  1,
+		input:   input,
+		state:   lexCifInitial,
+		line:    1,
 		emitted: nil,
-		stack: make([]stateFn, 0, 10),
+		stack:   make([]stateFn, 0, 10),
 	}
 	return lx
 }

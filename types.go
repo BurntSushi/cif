@@ -15,7 +15,7 @@ type CIF struct {
 // It corresponds either to a data block or a save frame.
 type Block struct {
 	// The name of this block.
-	Name  string
+	Name string
 
 	// Items maps data tags to values. Data tags that are part of a "loop_"
 	// declaration are not included here.

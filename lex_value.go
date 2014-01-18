@@ -12,13 +12,13 @@ func lexValue(lx *lexer) stateFn {
 	// XXX: I'm removing this check because it costs a lot to do.
 	// It will possibly allow invalid CIF documents, but it will never
 	// disallow valid CIF documents.
-	// reserved := []string{"data_", "save_"} 
-	// for _, word := range reserved { 
-		// if lx.aheadMatch(word) { 
-			// return lx.errf("%s cannot be used in the beginning of an "+ 
-				// "unquoted value.", word) 
-		// } 
-	// } 
+	// reserved := []string{"data_", "save_"}
+	// for _, word := range reserved {
+	// if lx.aheadMatch(word) {
+	// return lx.errf("%s cannot be used in the beginning of an "+
+	// "unquoted value.", word)
+	// }
+	// }
 
 	r := lx.next()
 	switch {

@@ -92,9 +92,9 @@ type ValueLoop interface {
 	// floats. If its underlying type is []string, then nil is returned.
 	Floats() []float64
 
-	// Raw provides the underlying []string, []int or []float64 value. The 
+	// Raw provides the underlying []string, []int or []float64 value. The
 	// interface returned may be used in a type switch.
-	// (A ValueLoop itself is not amenable to type switching, since the types 
+	// (A ValueLoop itself is not amenable to type switching, since the types
 	// that satisfy it in this package are not exported.)
 	Raw() interface{}
 }
@@ -104,7 +104,7 @@ type cifStrings []string
 func (cs cifStrings) Strings() []string { return []string(cs) }
 func (cs cifStrings) Ints() []int       { return nil }
 func (cs cifStrings) Floats() []float64 { return nil }
-func (cs cifStrings) Raw() interface{} { return []string(cs) }
+func (cs cifStrings) Raw() interface{}  { return []string(cs) }
 
 type cifInts []int
 
@@ -115,7 +115,7 @@ func (ci cifInts) Strings() []string {
 	}
 	return strs
 }
-func (ci cifInts) Ints() []int       { return []int(ci) }
+func (ci cifInts) Ints() []int { return []int(ci) }
 func (ci cifInts) Floats() []float64 {
 	floats := make([]float64, len(ci))
 	for i := range ci {
@@ -136,7 +136,7 @@ func (cf cifFloats) Strings() []string {
 }
 func (cf cifFloats) Ints() []int       { return nil }
 func (cf cifFloats) Floats() []float64 { return []float64(cf) }
-func (cf cifFloats) Raw() interface{} { return []float64(cf) }
+func (cf cifFloats) Raw() interface{}  { return []float64(cf) }
 
 // AsValues returns a value that satisfies the ValueLoop interface if v
 // has type []string, []int or []float. If v has any other type, this function
