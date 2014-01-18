@@ -186,6 +186,10 @@ func isValueType(t itemType) bool {
 		t == itemDataInteger || t == itemDataFloat || t == itemDataString
 }
 
+func isNull(t itemType) bool {
+	return t == itemDataOmitted || t == itemDataMissing
+}
+
 func isInteger(t itemType) bool {
 	return t == itemDataInteger
 }

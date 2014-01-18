@@ -34,6 +34,11 @@ func (p *parser) convertLoopValues(b Block, vals []loopValues) *Loop {
 		case itemDataInteger:
 			nums := make([]int, len(val.strs))
 			for j, str := range val.strs {
+				if str == "." || str == "?" {
+					nums[j] = 0
+					continue
+				}
+
 				n, err := strconv.Atoi(str)
 				if err != nil {
 					p.errf("Could not parse '%s' as integer: %s", str, err)
@@ -44,6 +49,11 @@ func (p *parser) convertLoopValues(b Block, vals []loopValues) *Loop {
 		case itemDataFloat:
 			nums := make([]float64, len(val.strs))
 			for j, str := range val.strs {
+				if str == "." || str == "?" {
+					nums[j] = 0
+					continue
+				}
+
 				n, err := strconv.ParseFloat(str, 64)
 				if err != nil {
 					p.errf("Could not parse '%s' as float: %s", str, err)
@@ -98,7 +108,7 @@ func (p *parser) parseLoop(b Block) item {
 		vals[column].strs = append(vals[column].strs, t.val)
 		if vals[column].typ == itemDataNone {
 			vals[column].typ = t.typ
-		} else if vals[column].typ != t.typ {
+		} else if vals[column].typ != t.typ && !isNull(t.typ) {
 			// If there is a mix of integers and floats, that's OK. But use
 			// float.
 			if (isInteger(vals[column].typ) && isFloat(t.typ)) ||
