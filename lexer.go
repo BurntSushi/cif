@@ -1,10 +1,6 @@
 package cif
 
-import (
-	"fmt"
-	"strings"
-	"unicode/utf8"
-)
+import "fmt"
 
 var (
 	pf = fmt.Printf
@@ -14,14 +10,13 @@ var (
 type stateFn func(lx *lexer) stateFn
 
 type lexer struct {
-	input  string
-	start  int
-	pos    int
-	width  int
-	line   int
-	column int
-	state  stateFn
-	items  chan item
+	input string
+	start int
+	pos   int
+	width int
+	line  int
+	state stateFn
+	emitted *item
 
 	// A stack of state functions used to maintain context.
 	// The idea is to reuse parts of the state machine in various places.
@@ -38,30 +33,24 @@ type item struct {
 
 func lex(input string) *lexer {
 	lx := &lexer{
-		input:  input,
-		state:  lexCifInitial,
-		line:   1,
-		column: 1,
-		items:  make(chan item, 10),
-		stack:  make([]stateFn, 0, 10),
+		input: input,
+		state: lexCifInitial,
+		line:  1,
+		emitted: nil,
+		stack: make([]stateFn, 0, 10),
 	}
 	return lx
 }
 
-func (lx *lexer) nextItem() item {
-	for {
-		select {
-		case item := <-lx.items:
-			return item
-		default:
-			// TODO: Remove this. Used for debugging while building lexer.
-			if lx.state == nil {
-				return item{itemEOF, "", 0}
-			}
-			lx.state = lx.state(lx)
-		}
+func (lx *lexer) nextItem() (it item) {
+	for lx.emitted == nil && lx.state != nil {
+		lx.state = lx.state(lx)
 	}
-	panic("not reached")
+	if lx.state == nil {
+		return item{itemEOF, "", 0}
+	}
+	it, lx.emitted = *lx.emitted, nil
+	return it
 }
 
 func (lx *lexer) push(state stateFn) {
@@ -81,8 +70,16 @@ func (lx *lexer) current() string {
 	return lx.input[lx.start:lx.pos]
 }
 
+var emitted = &item{}
+
 func (lx *lexer) emit(typ itemType) {
-	lx.items <- item{typ, lx.current(), lx.line}
+	if lx.emitted != nil {
+		panic("BUG in lexer: a state may only emit a single token")
+	}
+	lx.emitted = emitted
+	lx.emitted.typ = typ
+	lx.emitted.val = lx.current()
+	lx.emitted.line = lx.line
 	lx.start = lx.pos
 }
 
@@ -93,12 +90,12 @@ func (lx *lexer) next() (r rune) {
 	}
 	if lx.input[lx.pos] == '\n' {
 		lx.line++
-		lx.column = 1
 	}
-	// This is wrong. The CIF format says that only a subset of ASCII
-	// is allowed in CIF files.
-	r, lx.width = utf8.DecodeRuneInString(lx.input[lx.pos:])
-	lx.pos += lx.width
+	// We're allowed to do this because the CIF format only permits
+	// ASCII characters.
+	r = rune(lx.input[lx.pos])
+	lx.width = 1
+	lx.pos++
 	return r
 }
 
@@ -112,7 +109,6 @@ func (lx *lexer) backup() {
 	lx.pos -= lx.width
 	if lx.pos < len(lx.input) && lx.input[lx.pos] == '\n' {
 		lx.line--
-		// column is now wrong, but maybe that's OK.
 	}
 }
 
@@ -141,12 +137,13 @@ func (lx *lexer) acceptStr(s string, next stateFn) stateFn {
 
 // peek returns but does not consume the next rune in the input.
 func (lx *lexer) peek() rune {
-	r := lx.next()
-	lx.backup()
-	return r
+	if lx.pos >= len(lx.input) {
+		return eof
+	}
+	return rune(lx.input[lx.pos])
 }
 
-// peekAt returns the string (indexed by rune) from the current position
+// peekAt returns the string (indexed by byte) from the current position
 // up to the length given. This does not consume input.
 // If the length given exceeds what's left in the input, then the rest of the
 // input is returned.
@@ -154,21 +151,17 @@ func (lx *lexer) peekAt(length int) string {
 	if lx.pos >= len(lx.input) {
 		return ""
 	}
-	count, realLength := 0, 0
-	for i := range lx.input[lx.pos:] {
-		if count == length {
-			break
-		}
-		count++
-		realLength = i + 1
+	upto := lx.pos + length
+	if upto > len(lx.input) {
+		upto = len(lx.input)
 	}
-	return lx.input[lx.pos : lx.pos+realLength]
+	return lx.input[lx.pos:upto]
 }
 
 // aheadMatch looks ahead from the current lex position to see if the next
 // len(s) characters match s (case insensitive).
 func (lx *lexer) aheadMatch(s string) bool {
-	return strings.ToLower(lx.peekAt(len(s))) == strings.ToLower(s)
+	return lx.peekAt(len(s)) == s
 }
 
 // errf stops all lexing by emitting an error and returning `nil`.
@@ -187,7 +180,7 @@ func (lx *lexer) errf(format string, values ...interface{}) stateFn {
 			}
 		}
 	}
-	lx.items <- item{
+	lx.emitted = &item{
 		itemError,
 		sf(format, values...),
 		lx.line,

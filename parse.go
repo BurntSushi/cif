@@ -41,7 +41,6 @@ func (p *parser) errf(format string, v ...interface{}) {
 
 func (p *parser) next() item {
 	t := p.lx.nextItem()
-	// pf("%s :: %s (%d)\n", t.typ, t.val, t.line)
 	if t.typ == itemComment {
 		return p.next()
 	}

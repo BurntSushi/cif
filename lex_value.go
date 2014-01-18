@@ -1,7 +1,5 @@
 package cif
 
-import "strings"
-
 // lexValue tries to consume any kind of value (omitted, missing, integer,
 // float or string). If a valid value cannot be found, the lexer fails.
 func lexValue(lx *lexer) stateFn {
@@ -11,13 +9,16 @@ func lexValue(lx *lexer) stateFn {
 	previous := lx.next()
 
 	// Make sure that no reserved words are used for unquoted values.
-	reserved := []string{"data_", "save_"}
-	for _, word := range reserved {
-		if lx.aheadMatch(word) {
-			return lx.errf("%s cannot be used in the beginning of an unquoted "+
-				"value.", word)
-		}
-	}
+	// XXX: I'm removing this check because it costs a lot to do.
+	// It will possibly allow invalid CIF documents, but it will never
+	// disallow valid CIF documents.
+	// reserved := []string{"data_", "save_"} 
+	// for _, word := range reserved { 
+		// if lx.aheadMatch(word) { 
+			// return lx.errf("%s cannot be used in the beginning of an "+ 
+				// "unquoted value.", word) 
+		// } 
+	// } 
 
 	r := lx.next()
 	switch {
@@ -191,7 +192,7 @@ func lexValueUnquotedEnd(lx *lexer) stateFn {
 	// Make sure that no reserved words are used for unquoted values.
 	reserved := []string{"loop_", "stop_", "global_"}
 	for _, word := range reserved {
-		if word == strings.ToLower(lx.current()) {
+		if word == lx.current() {
 			return lx.errf("%s cannot be used as an unquoted string value.",
 				word)
 		}

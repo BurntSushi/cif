@@ -196,13 +196,17 @@ func lexLoopStartValue(lx *lexer) stateFn {
 // lexLoopValues attempts to consume a data value, but also checks if the
 // values have ended by seeing a '_', 'data_' or 'save_'.
 func lexLoopValues(lx *lexer) stateFn {
-	if lx.peek() == tagPrefix ||
-		lx.aheadMatch("data_") ||
-		lx.aheadMatch("save_") ||
-		lx.aheadMatch("loop_") {
+	r := lx.peek()
+	peek := lx.peekAt(5)
+	if r == tagPrefix {
 		return lx.pop()
 	}
-	if lx.peek() == eof {
+	if r == 'd' || r == 's' || r == 'l' {
+		if peek == "data_" || peek == "save_" || peek == "loop_" {
+			return lx.pop()
+		}
+	}
+	if r == eof {
 		return lx.stop()
 	}
 	lx.push(lexLoopValues)
@@ -215,29 +219,33 @@ func lexDataTag(lx *lexer) stateFn {
 	return lexWhiteSpace(lx, lx.pop())
 }
 
-// chars consumes a sequence of characters while `pred` is true. If `oneOrMore`
-// is true, then at least one character must match `pred`, or else the lexer
-// will fail.
-func (lx *lexer) chars(oneOrMore bool, pred func(rune) bool) stateFn {
-	var lexOneOrMore, lexPred stateFn
-	lexOneOrMore = func(lx *lexer) stateFn {
+var pred func(rune) bool
+
+func lexOneOrMore(lx *lexer) stateFn {
+	r := lx.next()
+	if !pred(r) {
+		return lx.errf("Expected at least one character, but "+
+			"got '%s' instead.", r)
+	}
+	return lexPred
+}
+
+func lexPred(lx *lexer) stateFn {
+	for {
 		r := lx.next()
 		if !pred(r) {
-			return lx.errf("Expected at least one character, but "+
-				"got '%s' instead.", r)
+			lx.backup()
+			return lx.pop()
 		}
 		return lexPred
 	}
-	lexPred = func(lx *lexer) stateFn {
-		for {
-			r := lx.next()
-			if !pred(r) {
-				lx.backup()
-				return lx.pop()
-			}
-			return lexPred
-		}
-	}
+}
+
+// chars consumes a sequence of characters while `pred` is true. If `oneOrMore`
+// is true, then at least one character must match `pred`, or else the lexer
+// will fail.
+func (lx *lexer) chars(oneOrMore bool, predFn func(rune) bool) stateFn {
+	pred = predFn
 	if oneOrMore {
 		return lexOneOrMore
 	}
@@ -266,16 +274,19 @@ func lexVersion(lx *lexer) stateFn {
 // (Note that EOF here doesn't necessarily imply a valid CIF file! It's up to
 // the parser to determine that.)
 func lexSpaceOrEof(lx *lexer, next stateFn) stateFn {
-	return func(lx *lexer) stateFn {
-		r := lx.peek()
-		if !isWhiteSpace(r) && r != eof {
-			return lx.errf("Expected whitespace or EOF, "+"but got '%s' "+
-				"instead.", r)
-		} else if r == eof {
-			return lx.stop()
-		}
-		return next
+	lx.push(next)
+	return lexSpaceOrEofContinue
+}
+
+func lexSpaceOrEofContinue(lx *lexer) stateFn {
+	r := lx.peek()
+	if !isWhiteSpace(r) && r != eof {
+		return lx.errf("Expected whitespace or EOF, "+"but got '%s' "+
+			"instead.", r)
+	} else if r == eof {
+		return lx.stop()
 	}
+	return lx.pop()
 }
 
 // lexWhiteSpace consumes one or more whitespace characters, otherwise the
